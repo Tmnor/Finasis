@@ -6,9 +6,14 @@ import logging
 from argparse import ArgumentParser
 from bs4 import BeautifulSoup
 from requests.exceptions import RequestException
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
 
 class Company:
-    def __init__(self, name, orgnumber, liquidity, profitability, solidity, revenue, operatingProfit, revenueBeforeTax, assets, equity, valuecode):
+    def __init__(self, name, orgnumber, liquidity, profitability, solidity, revenue, operatingProfit, revenueBeforeTax, assets, equity, valuecode, financials_balance_sheet=[], cash_flow=[]):
         self.name = name
         self.orgnumber = orgnumber
         self.profitability = profitability
@@ -20,6 +25,9 @@ class Company:
         self.assets = assets
         self.equity = equity
         self.valuecode = valuecode
+        self.financials_balance_sheet = financials_balance_sheet
+        self.cash_flow = cash_flow
+
 
 def parse_arguments():
     parser = ArgumentParser(description='Grabs information located at Proff.no.')
@@ -27,6 +35,7 @@ def parse_arguments():
     args = parser.parse_args()
     complete_url = f"http://data.brreg.no/enhetsregisteret/enhet.json?$filter=startswith(navn,'{args.company}')"
     return complete_url
+
 
 def get_content(url):
     try:
@@ -37,6 +46,7 @@ def get_content(url):
         return None
 
     return resp.text
+
 
 def create_company(name, orgNumber):
     getProffURL = f'http://www.proff.no/bransjesøk?q={str(orgNumber)}'
@@ -59,26 +69,76 @@ def create_company(name, orgNumber):
 
     proffSoup = BeautifulSoup(content, 'html.parser')
 
-    table = proffSoup.find(class_='total-account-table ui-wide')
-    if table is None:
-        return None
+    driver = webdriver.Chrome()
 
-    infoFromHeader = []
-    topstatistics = proffSoup.find_all(class_='chart-value', limit=3)
-    for i in topstatistics:
-        span = i.span
-        if span is not None:
-            infoFromHeader.append(span.get_text().strip().replace("(","").replace(")",""))
-        elif i.get_text() == "Kan ikke beregnes":
-            infoFromHeader.append(0)
+    # Navigate to financials/balance sheet page
+    fin_balance_link = proffSoup.find('a', class_='addax addax-cs_ip_keyfigures_click ss-dropdown')
+    driver.get(fin_balance_link['href'])
 
-    table_data = parse_rows(table)
+    # Check if switchAccounting is present and click corporate link if so
+    try:
+        switchAccounting = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'switchAccounting')))
+        corporate_link = switchAccounting.find_element_by_link_text('corporate')
+        corporate_link.click()
 
-    if len(table_data) >= 5:
-        company = Company(name, orgNumber, infoFromHeader[0], infoFromHeader[1], infoFromHeader[2], table_data[0], table_data[1], table_data[2], table_data[3], table_data[4], table_data[5])
-        return company
-    else:
-        return None
+        # Fetch financials and balance sheets from specific tables
+        financials_balance_sheet = parse_table(driver, 7)
+        balance_sheet = parse_table(driver, 8)
+    except:
+        # If switchAccounting was not present, fetch from different tables
+        financials_balance_sheet = parse_table(driver, 3)
+        balance_sheet = parse_table(driver, 4)
+
+    # Navigate to cash flow page
+    cash_flow_link = proffSoup.find('a', class_='addax addax-cs_ip_analysis_click ss-dropdown')
+    driver.get(cash_flow_link['href'])
+
+    # Check if switchAccounting is present and click corporate link if so
+    try:
+        switchAccounting = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'switchAccounting')))
+        corporate_link = switchAccounting.find_element_by_link_text('corporate')
+        corporate_link.click()
+
+        # Fetch cash flow from specific table
+        cash_flow = parse_table(driver, 4)
+    except:
+        # If switchAccounting was not present, fetch from different table
+        cash_flow = parse_table(driver, 2)
+
+    driver.quit()
+
+    company = Company(name, orgNumber, infoFromHeader[0], infoFromHeader[1], infoFromHeader[2], table_data[0], table_data[1], table_data[2], table_data[3], table_data[4], table_data[5], financials_balance_sheet + balance_sheet, cash_flow)
+    return company
+
+
+def parse_table(driver, table_index):
+    # Wait for the presence of tables in the page
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, 'table')))
+
+    # Get all tables in the page
+    tables = driver.find_elements_by_tag_name('table')
+
+    # If the table index is out of range, return an empty list
+    if table_index >= len(tables):
+        print(f'Error: table index {table_index} out of range. Only found {len(tables)} tables.')
+        return []
+
+    # Get the rows in the table
+    rows = tables[table_index].find_elements_by_tag_name('tr')
+
+    data = []
+    # Iterate over the rows
+    for row in rows:
+        # Get the cells in the row
+        cells = row.find_elements_by_tag_name('td')
+
+        # Iterate over the cells
+        for cell in cells:
+            # Append the cell text to the data list
+            data.append(cell.text)
+
+    return data
+
 
 def main():
     url = parse_arguments()
@@ -98,6 +158,7 @@ def main():
             companies.append(company)
 
     return companies
+
 
 if __name__ == '__main__':
     logging.basicConfig(filename='scraper.log', level=logging.ERROR)
