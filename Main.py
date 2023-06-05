@@ -76,11 +76,11 @@ def create_company(name, orgNumber):
 
         # Fetch financials and balance sheets from specific tables
         financials = parse_table(driver, 7)
-        balance_sheet = parse_table(driver, 8)
+        balancesheet = parse_table(driver, 8)
     except:
         # If switchAccounting was not present, fetch from different tables
         financials = parse_table(driver, 3)
-        balance_sheet = parse_table(driver, 4)
+        balancesheet = parse_table(driver, 4)
 
     # Navigate to cash flow page
     cash_flow_link = proffSoup.find('a', class_='addax addax-cs_ip_analysis_click ss-dropdown')
@@ -100,7 +100,7 @@ def create_company(name, orgNumber):
 
     driver.quit()
 
-    company = Company(name, orgNumber, infoFromHeader[0], infoFromHeader[1], infoFromHeader[2], table_data[0], table_data[1], table_data[2], table_data[3], table_data[4], table_data[5], financials_balance_sheet + balance_sheet, cash_flow)
+    company = Company(name, orgNumber, financials, balancesheet, cash_flow)
     return company
 
 
@@ -169,16 +169,9 @@ def format_output(companies):
         company_data = {
             "name": company.name,
             "orgnumber": company.orgnumber,
-            "liquidity": company.liquidity,
-            "profitability": company.profitability,
-            "solidity": company.solidity,
-            "revenue": company.revenue,
-            "operatingProfit": company.operatingProfit,
-            "revenueBeforeTax": company.revenueBeforeTax,
-            "assets": company.assets,
-            "equity": company.equity,
             "valuecode": company.valuecode,
-            "financials_balance_sheet": company.financials_balance_sheet,
+            "financials": company.financials,
+            "balancesheet": company.balancesheet,
             "cash_flow": company.cash_flow,
         }
         output["companies"].append(company_data)
