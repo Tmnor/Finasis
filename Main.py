@@ -13,19 +13,12 @@ from selenium.webdriver.support import expected_conditions as EC
 
 
 class Company:
-    def __init__(self, name, orgnumber, liquidity, profitability, solidity, revenue, operatingProfit, revenueBeforeTax, assets, equity, valuecode, financials_balance_sheet=[], cash_flow=[]):
+    def __init__(self, name, orgnumber, valuecode, financials=[], balancesheet=[], cash_flow=[]):
         self.name = name
         self.orgnumber = orgnumber
-        self.profitability = profitability
-        self.solidity = solidity
-        self.liquidity = liquidity
-        self.revenue = revenue
-        self.operatingProfit = operatingProfit
-        self.revenueBeforeTax = revenueBeforeTax
-        self.assets = assets
-        self.equity = equity
         self.valuecode = valuecode
-        self.financials_balance_sheet = financials_balance_sheet
+        self.financials = financials
+        self.balancesheet = balancesheet
         self.cash_flow = cash_flow
 
 
@@ -82,11 +75,11 @@ def create_company(name, orgNumber):
         corporate_link.click()
 
         # Fetch financials and balance sheets from specific tables
-        financials_balance_sheet = parse_table(driver, 7)
+        financials = parse_table(driver, 7)
         balance_sheet = parse_table(driver, 8)
     except:
         # If switchAccounting was not present, fetch from different tables
-        financials_balance_sheet = parse_table(driver, 3)
+        financials = parse_table(driver, 3)
         balance_sheet = parse_table(driver, 4)
 
     # Navigate to cash flow page
@@ -127,15 +120,24 @@ def parse_table(driver, table_index):
     rows = tables[table_index].find_elements_by_tag_name('tr')
 
     data = []
-    # Iterate over the rows
-    for row in rows:
+
+    # Get the header row and extract the years
+    header = rows[0].find_elements_by_tag_name('th')
+    years = [cell.find_element_by_tag_name('span').text for cell in header[1:]] # Skip the first cell (it's not a year)
+    data.append(years)
+
+    # Iterate over the remaining rows
+    for row in rows[1:]:
         # Get the cells in the row
         cells = row.find_elements_by_tag_name('td')
 
+        row_data = []
         # Iterate over the cells
         for cell in cells:
-            # Append the cell text to the data list
-            data.append(cell.text)
+            # Append the cell text to the row_data list
+            row_data.append(cell.text)
+        # Append the row_data to the data list
+        data.append(row_data)
 
     return data
 
@@ -160,7 +162,31 @@ def main():
     return companies
 
 
+def format_output(companies):
+    output = {"companies": []}
+
+    for company in companies:
+        company_data = {
+            "name": company.name,
+            "orgnumber": company.orgnumber,
+            "liquidity": company.liquidity,
+            "profitability": company.profitability,
+            "solidity": company.solidity,
+            "revenue": company.revenue,
+            "operatingProfit": company.operatingProfit,
+            "revenueBeforeTax": company.revenueBeforeTax,
+            "assets": company.assets,
+            "equity": company.equity,
+            "valuecode": company.valuecode,
+            "financials_balance_sheet": company.financials_balance_sheet,
+            "cash_flow": company.cash_flow,
+        }
+        output["companies"].append(company_data)
+
+    return output
+
 if __name__ == '__main__':
     logging.basicConfig(filename='scraper.log', level=logging.ERROR)
     companies = main()
-    print(json.dumps([ob.__dict__ for ob in companies], sort_keys=True, indent=4, separators=(',', ': '), ensure_ascii=False))
+    output = format_output(companies)
+    print(json.dumps(output, sort_keys=True, indent=4, separators=(',', ': '), ensure_ascii=False))
